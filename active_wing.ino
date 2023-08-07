@@ -136,8 +136,11 @@ void loop()
   if(aeroEnabled == true)
   {
     wingUp = false;
-    airbrakeUp = true;
-    airbrakeLocked = true;
+    if(aeroLocked == true)
+    {
+      airbrakeUp = true;
+      airbrakeLocked = true;
+    }
   }
   else
   {
