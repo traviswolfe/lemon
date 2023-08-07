@@ -74,8 +74,8 @@ void loop()
     //Throttle depressed, steering wheel is straight, brake is not active
     if(aeroPossible == false)
     {
-      //If aero was previously not possible, store the time that it became possible
-      //we will use this to track how long it has been
+      //If aero was previously not possible, store the time that it became possible. We will use this to track how long it
+      //has been
       aeroPossible = true;
       aeroPossibleSince = millis();
     }
@@ -89,8 +89,7 @@ void loop()
     }
     else if(aeroLocked == false)
     {
-      //If aero is enabled, but has not been locked, check if enough time has passed
-      //for us to lock it
+      //If aero is enabled, but has not been locked, check if enough time has passed for us to lock it
       if(aeroPossibleSince + AERO_LOCKED > millis())
       {
         aeroLocked = true;
@@ -108,18 +107,16 @@ void loop()
       //If aero is locked and throttle was released, we're not going to reset
       if(sensorBrake == LOW || sensorSteering == HIGH || (sensorThrottle == HIGH && aeroLocked == false))
       {
-        //
         if(aeroExitPossible == false)
         {
+          //If exit was previously not possible, store the time it becaome possible.
           aeroExitPossible = true;
           aeroExitPossibleSince = millis();
         }
-        else
+        else if(aeroExitPossibleSince + AERO_EXIT_TIMER < millis())
         {
-          if(aeroExitPossibleSince + AERO_EXIT_TIMER < millis())
-          {
+            //It has been possible to exit for AERO_EXIT_TIMER milliseconds consecutively. Exit aero.
             resetAero();
-          }
         }
       }
     }
