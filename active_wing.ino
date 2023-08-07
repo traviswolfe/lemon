@@ -8,9 +8,11 @@
 #define PIN_ACTUATOR_EXTEND 10
 #define PIN_ACTUATOR_RETRACT 11
 #define PIN_SOLENOID 12
+#define PIN_SOLENOID_UNUSED 13
 
 #define AERO_TIMER 1500
 #define AERO_LOCKED 3000
+#define AERO_EXIT_TIMER 20
 
 int requestWingUp = 0;
 int requestWingDown = 0;
@@ -26,13 +28,14 @@ bool airbrakeLocked = false;
 bool aeroPossible = false;
 bool aeroEnabled = false;
 bool aeroLocked = false;
+bool aeroExitPossible = false;
 int aeroPossibleSince = -1;
-
-int counter = 0;
-int timer = 0;
+int aeroExitPossibleSince -1;
 
 void setup()
 {
+  //Set the states of all the pins so we can read them
+  //
   //Input type of INPUT_PULLUP adds a ~20k resistor to 5v on the input pin. This way, when no contact is made, the pin will
   //read HIGH. When contact is made, the pin is grounded, and will read LOW.
   pinMode(PIN_WING_UP, INPUT_PULLUP);       //Digital read LOW means wing elevated requested
@@ -43,15 +46,15 @@ void setup()
   pinMode(PIN_STEERING, INPUT);             //Digital read LOW means steering wheel is straight
   pinMode(PIN_BRAKE, INPUT_PULLUP);         //Digital read LOW means brake light is active
   pinMode(PIN_ACTUATOR_EXTEND, OUTPUT);     //PWM signal to extend actuator. Digital HIGH for 100%. RETRACT pin must be off.
-  pinMode(PIN_ACTUATOR_RETRACT, OUTPUT);    //PWM signal to retract actuator. Digial HIGH for 100%. EXTEND ping must be off.
+  pinMode(PIN_ACTUATOR_RETRACT, OUTPUT);    //PWM signal to retract actuator. Digial HIGH for 100%. EXTEND pin must be off.
   pinMode(PIN_SOLENOID, OUTPUT);            //Digital write LOW to extend the wing, HIGH to stow the wing.
+  pinMode(PIN_SOLENOID_UNUSED, OUTPUT);     //Unused pin, however it is connected to the h-bridge. Must be set low
 
   //Set initial state of wing extended, air brake disabled
   digitalWrite(PIN_SOLENOID, LOW);
+  digitalWrite(PIN_SOLENOID_UNUSED, LOW);
   digitalWrite(PIN_ACTUATOR_EXTEND, LOW);
   digitalWrite(PIN_ACTUATOR_RETRACT, HIGH);
-
-  //Serial.begin(9600);
 }
 
 void loop()
@@ -78,9 +81,8 @@ void loop()
     }
     else if(aeroEnabled == false)
     {
-      //If aero was previously possible, but still has not been enabled, check if
-      //enough time has passed for us to enable it
-      if(aeroPossibleSince + AERO_TIMER > millis())
+      //If aero was previously possible, but still has not been enabled, check if enough time has passed for us to enable it
+      if(aeroPossibleSince + AERO_TIMER < millis())
       {
         aeroEnabled = true;
       }
@@ -94,33 +96,46 @@ void loop()
         aeroLocked = true;
       }
     }
+    //Since aero is currently possible, reset the flag for exiting (if it was ever set)
+    aeroExitPossible = false;
   }
-
-  if(sensorBrake == LOW)
+  //Either the brake is depressed, the steering wheel has turned, or the throttle is no longer depressed
+  else
   {
-    //Brake has been depressed
-    resetAero();
-  }
-  else if(aeroEnabled == false && airbrakeLocked == true)
-  {
-    //If aero is disabled, and we are no longer braking, disable the airbrake
-    airbrakeLocked = false;
-  }
-  if(sensorSteering == HIGH)
-  {
-    //Steering wheel is not straight
-    resetAero();
-  }
-  if(sensorThrottle == HIGH)
-  {
-    //Throttle is no longer depressed
-    if(aeroLocked == false)
+    //If aero is currently enabled, handle if we need to reset it after the timeout has elapsed
+    if(aeroEnabled == true)
     {
-      //Only reset aero if aero did not get locked, so we can shift
+      //If aero is locked and throttle was released, we're not going to reset
+      if(sensorBrake == LOW || sensorSteering == HIGH || (sensorThrottle == HIGH && aeroLocked == false))
+      {
+        //
+        if(aeroExitPossible == false)
+        {
+          aeroExitPossible = true;
+          aeroExitPossibleSince = millis();
+        }
+        else
+        {
+          if(aeroExitPossibleSince + AERO_EXIT_TIMER < millis())
+          {
+            resetAero();
+          }
+        }
+      }
+    }
+    else
+    {
       resetAero();
     }
   }
 
+  //If we exited aero, and locked the air brake, but we are not longer pressing the brake pedal, then unlock the airbrake
+  if(sensorBrake == HIGH && aeroEnabled == false && airbrakeLocked == true)
+  {
+    airbrakeLocked = false;
+  }
+
+  //Aero state should be set. Set wing and airbrake states.
   if(aeroEnabled == true)
   {
     wingUp = false;
@@ -140,8 +155,8 @@ void loop()
     wingUp = true;
   }
 
-  //Override with any requested mode. If, for whatever reason, UP and DOWN are both requested because of a wiring issue
-  //we will default to airbrake off and the wing being up.
+  //Override wing and airbrake state with any requested mode. If, for whatever reason, UP and DOWN are both requested
+  //because of a wiring issue we will default to airbrake off and the wing being up.
   if(requestWingDown == LOW)
   {
     wingUp = false;
@@ -178,15 +193,13 @@ void loop()
     digitalWrite(PIN_ACTUATOR_EXTEND, LOW);
     digitalWrite(PIN_ACTUATOR_RETRACT, HIGH);
   }
-  //Serial.println(String(millis()) + ":   wingup:" + String(wingUp) + "   airbrakeup:" + String(airbrakeUp));
-  //Serial.println(String(millis()) + ":   sensorThrottle:" + String(sensorThrottle) + "   sensorSteering:" + String(sensorSteering) + "   sensorBrake:" + String(sensorBrake));
-  //delay(1000);
 }
 
+//Helper function to reset all aero-associated variables
 void resetAero()
 {
-    aeroPossible = false;
-    aeroEnabled = false;
-    aeroLocked = false;
-    aeroPossibleSince = -1;
+  aeroPossible = false;
+  aeroEnabled = false;
+  aeroLocked = false;
+  aeroPossibleSince = -1;
 }
