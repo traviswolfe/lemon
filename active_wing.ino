@@ -30,7 +30,7 @@ bool aeroEnabled = false;
 bool aeroLocked = false;
 bool aeroExitPossible = false;
 int aeroPossibleSince = -1;
-int aeroExitPossibleSince -1;
+int aeroExitPossibleSince = -1;
 
 void setup()
 {
