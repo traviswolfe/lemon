@@ -10,9 +10,11 @@
 #define PIN_SOLENOID 12
 #define PIN_SOLENOID_UNUSED 13
 
-#define AERO_TIMER 1500
-#define AERO_LOCKED 3000
+#define AERO_TIMER 1200
+#define AERO_LOCKED 2400
 #define AERO_EXIT_TIMER 20
+#define AIRBRAKE_MAX_POWER_TIME 1200
+#define AIRBRAKE_DUTY_CYCLE 39  //0-255 range, 39 is ~15% duty cycle
 
 int requestWingUp = 0;
 int requestWingDown = 0;
@@ -23,14 +25,17 @@ int sensorSteering = 0;
 int sensorBrake = 0;
 
 bool wingUp = false;
+bool wingUpCurrentState = false;
 bool airbrakeUp = false;
+bool airbrakeUpCurrentState = false;
 bool airbrakeLocked = false;
 bool aeroPossible = false;
 bool aeroEnabled = false;
 bool aeroLocked = false;
 bool aeroExitPossible = false;
-int aeroPossibleSince = -1;
-int aeroExitPossibleSince = -1;
+unsigned long aeroPossibleSince = 0;
+unsigned long aeroExitPossibleSince = 0;
+unsigned long airbrakeStateSince = 0;
 
 void setup()
 {
@@ -43,10 +48,10 @@ void setup()
   pinMode(PIN_AIRBRAKE_UP, INPUT_PULLUP);   //Digital read LOW means airbrake forced up requested
   pinMode(PIN_AIRBRAKE_DOWN, INPUT_PULLUP); //Digital read LOW means airbrake forced down requested
   pinMode(PIN_THROTTLE, INPUT_PULLUP);      //Digital read LOW means throttle is active
-  pinMode(PIN_STEERING, INPUT);             //Digital read LOW means steering wheel is straight
+  pinMode(PIN_STEERING, INPUT_PULLUP);      //Digital read LOW means steering wheel is straight
   pinMode(PIN_BRAKE, INPUT_PULLUP);         //Digital read LOW means brake light is active
   pinMode(PIN_ACTUATOR_EXTEND, OUTPUT);     //PWM signal to extend actuator. Digital HIGH for 100%. RETRACT pin must be off.
-  pinMode(PIN_ACTUATOR_RETRACT, OUTPUT);    //PWM signal to retract actuator. Digial HIGH for 100%. EXTEND pin must be off.
+  pinMode(PIN_ACTUATOR_RETRACT, OUTPUT);    //PWM signal to retract actuator. Digital HIGH for 100%. EXTEND pin must be off.
   pinMode(PIN_SOLENOID, OUTPUT);            //Digital write LOW to extend the wing, HIGH to stow the wing.
   pinMode(PIN_SOLENOID_UNUSED, OUTPUT);     //Unused pin, however it is connected to the h-bridge. Must be set low
 
@@ -55,6 +60,9 @@ void setup()
   digitalWrite(PIN_SOLENOID_UNUSED, LOW);
   digitalWrite(PIN_ACTUATOR_EXTEND, LOW);
   digitalWrite(PIN_ACTUATOR_RETRACT, HIGH);
+  airbrakeUpCurrentState = false;
+  wingUpCurrentState = true;
+  airbrakeStateSince = millis();
 }
 
 void loop()
@@ -90,7 +98,7 @@ void loop()
     else if(aeroLocked == false)
     {
       //If aero is enabled, but has not been locked, check if enough time has passed for us to lock it
-      if(aeroPossibleSince + AERO_LOCKED > millis())
+      if(aeroPossibleSince + AERO_LOCKED < millis())
       {
         aeroLocked = true;
       }
@@ -174,32 +182,61 @@ void loop()
     airbrakeUp = false;
   }
 
-  //We should now have our state for the wing and airbrake. Send the signal to the actuator and solenoid
-  if(wingUp == true)
+  //We should now have our state for the wing and airbrake. Check if the new state is different than the old state. If it
+  //is, send the new state to the corresponding pins.
+  if(wingUp == true && wingUpCurrentState == false)
   {
     digitalWrite(PIN_SOLENOID, LOW);
+    wingUpCurrentState = true;
   }
-  else
+  else if(wingUp == false && wingUpCurrentState == true)
   {
     digitalWrite(PIN_SOLENOID, HIGH);
+    wingUpCurrentState = false;
   }
-  if(airbrakeUp == true)
+
+
+  //For the airbrake, we only want to send full power for a few seconds. DC motors draw more power when stalled, and can
+  //overheat when given 100% power continuously when stalled. Instead, send the rated duty cycle of the motor via PWM.
+  if(airbrakeUp == true && airbrakeUpCurrentState == false)
   {
     digitalWrite(PIN_ACTUATOR_RETRACT, LOW);
     digitalWrite(PIN_ACTUATOR_EXTEND, HIGH);
+    airbrakeUpCurrentState = true;
+    airbrakeStateSince = millis();
   }
-  else
+  else if(airbrakeUp == false && airbrakeUpCurrentState == true)
   {
     digitalWrite(PIN_ACTUATOR_EXTEND, LOW);
     digitalWrite(PIN_ACTUATOR_RETRACT, HIGH);
+    airbrakeUpCurrentState = false;
+    airbrakeStateSince = millis();
+  }
+  else if(airbrakeStateSince + AIRBRAKE_MAX_POWER_TIME < millis())
+  {
+    if(airbrakeUpCurrentState == true)
+    {
+      //If the airbrake is up, and the brake pedal is pressed, send full power to hold state.
+      if(sensorBrake == LOW && airbrakeLocked == true)
+      {
+        digitalWrite(PIN_ACTUATOR_EXTEND, HIGH);
+      }
+      else
+      {
+        analogWrite(PIN_ACTUATOR_EXTEND, AIRBRAKE_DUTY_CYCLE);
+      }
+    }
+    else
+    {
+      analogWrite(PIN_ACTUATOR_RETRACT, AIRBRAKE_DUTY_CYCLE);
+    }
   }
 }
-
 //Helper function to reset all aero-associated variables
 void resetAero()
 {
   aeroPossible = false;
   aeroEnabled = false;
   aeroLocked = false;
-  aeroPossibleSince = -1;
+  aeroPossibleSince = 0;
 }
