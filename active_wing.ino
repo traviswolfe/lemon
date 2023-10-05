@@ -13,8 +13,8 @@
 #define AERO_TIMER 1200
 #define AERO_LOCKED 2400
 #define AERO_EXIT_TIMER 20
-#define AIRBRAKE_MAX_POWER_TIME 1200
-#define AIRBRAKE_DUTY_CYCLE 39  //0-255 range, 39 is ~15% duty cycle
+#define AIRBRAKE_MAX_POWER_TIME 2000 
+//#define AIRBRAKE_DUTY_CYCLE 0  //0-255 range, 39 is ~15% duty cycle
 
 int requestWingUp = 0;
 int requestWingDown = 0;
@@ -29,6 +29,7 @@ bool wingUpCurrentState = false;
 bool airbrakeUp = false;
 bool airbrakeUpCurrentState = false;
 bool airbrakeLocked = false;
+bool airbrakeMoving = false;
 bool aeroPossible = false;
 bool aeroEnabled = false;
 bool aeroLocked = false;
@@ -197,22 +198,30 @@ void loop()
 
 
   //For the airbrake, we only want to send full power for a few seconds. DC motors draw more power when stalled, and can
-  //overheat when given 100% power continuously when stalled. Instead, send the rated duty cycle of the motor via PWM.
+  //overheat when given 100% power continuously when stalled.
   if(airbrakeUp == true && airbrakeUpCurrentState == false)
   {
     digitalWrite(PIN_ACTUATOR_RETRACT, LOW);
     digitalWrite(PIN_ACTUATOR_EXTEND, HIGH);
-    airbrakeUpCurrentState = true;
     airbrakeStateSince = millis();
+    airbrakeUpCurrentState = true;
+    airbrakeMoving = true;
   }
   else if(airbrakeUp == false && airbrakeUpCurrentState == true)
   {
     digitalWrite(PIN_ACTUATOR_EXTEND, LOW);
     digitalWrite(PIN_ACTUATOR_RETRACT, HIGH);
-    airbrakeUpCurrentState = false;
     airbrakeStateSince = millis();
+    airbrakeUpCurrentState = false;
+    airbrakeMoving = true;
   }
-  else if(airbrakeStateSince + AIRBRAKE_MAX_POWER_TIME < millis())
+  else if(airbrakeMoving == true && (airbrakeStateSince + AIRBRAKE_MAX_POWER_TIME < millis()))
+  {
+    digitalWrite(PIN_ACTUATOR_EXTEND, LOW);
+    digitalWrite(PIN_ACTUATOR_RETRACT, LOW);
+    airbrakeMoving = false;
+  }
+  /*else if(airbrakeStateSince + AIRBRAKE_MAX_POWER_TIME < millis())
   {
     if(airbrakeUpCurrentState == true)
     {
@@ -230,7 +239,7 @@ void loop()
     {
       analogWrite(PIN_ACTUATOR_RETRACT, AIRBRAKE_DUTY_CYCLE);
     }
-  }
+  }*/
 }
 //Helper function to reset all aero-associated variables
 void resetAero()
